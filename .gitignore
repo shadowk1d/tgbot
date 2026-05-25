@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+data/
+*.db
+*.sqlite
+bot.pid
+migrate_to_pg.py
