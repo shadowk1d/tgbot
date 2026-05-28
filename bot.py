@@ -291,6 +291,14 @@ def kb_contact(uid: int = 0) -> ReplyKeyboardMarkup:
     )
 
 
+def kb_reply_main_menu() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🏠 Main Menu")]],
+        resize_keyboard=True,
+        is_persistent=True,
+    )
+
+
 def _nav(page: int, total: int, prefix: str) -> list[InlineKeyboardButton]:
     row = []
     if page > 0:
@@ -516,6 +524,7 @@ async def cmd_start(msg: Message, state: FSMContext) -> None:
         parse_mode=ParseMode.HTML,
         reply_markup=kb_main(uid),
     )
+    await msg.answer("Quick actions:", reply_markup=kb_reply_main_menu())
 
 
 async def _open_lot_for_bidding(msg: Message, state: FSMContext,
@@ -651,7 +660,7 @@ async def _finish_registration(msg: Message, state: FSMContext, phone: str) -> N
     await msg.answer(
         t(uid, "reg_submitted"),
         parse_mode=ParseMode.HTML,
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=kb_reply_main_menu(),
     )
 
     # Notify admins
@@ -760,6 +769,7 @@ async def cmd_menu(msg: Message, state: FSMContext) -> None:
     await state.clear()
     db.ensure_user(msg.from_user.id, msg.from_user.username)
     await msg.answer(t(msg.from_user.id, "menu_title"), reply_markup=kb_main(msg.from_user.id))
+    await msg.answer("Quick actions:", reply_markup=kb_reply_main_menu())
 
 
 @router.message(F.text == "🏠 Main Menu")
@@ -767,6 +777,7 @@ async def cmd_menu_button(msg: Message, state: FSMContext) -> None:
     await state.clear()
     db.ensure_user(msg.from_user.id, msg.from_user.username)
     await msg.answer(t(msg.from_user.id, "menu_title"), reply_markup=kb_main(msg.from_user.id))
+    await msg.answer("Quick actions:", reply_markup=kb_reply_main_menu())
 
 
 @router.callback_query(F.data == "menu")
@@ -778,6 +789,7 @@ async def cb_menu(cq: CallbackQuery, state: FSMContext) -> None:
         await cq.message.edit_text(text, reply_markup=kb_main(uid))
     except Exception:
         await cq.message.answer(text, reply_markup=kb_main(uid))
+    await cq.message.answer("Quick actions:", reply_markup=kb_reply_main_menu())
     await cq.answer()
 
 
@@ -790,6 +802,7 @@ async def cb_cancel(cq: CallbackQuery, state: FSMContext) -> None:
         await cq.message.edit_text(text, reply_markup=kb_main(uid))
     except Exception:
         await cq.message.answer(text, reply_markup=kb_main(uid))
+    await cq.message.answer("Quick actions:", reply_markup=kb_reply_main_menu())
     await cq.answer()
 
 
