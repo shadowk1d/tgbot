@@ -282,7 +282,10 @@ def kb_verify_user(tg_id: int) -> InlineKeyboardMarkup:
 def kb_contact(uid: int = 0) -> ReplyKeyboardMarkup:
     label = t(uid, "reg_phone_btn") if uid else "📱 Send my phone"
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=label, request_contact=True)]],
+        keyboard=[
+            [KeyboardButton(text=label, request_contact=True)],
+            [KeyboardButton(text="🏠 Main Menu")],
+        ],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -754,6 +757,13 @@ async def cb_admin_pending(cq: CallbackQuery) -> None:
 
 @router.message(Command("menu"))
 async def cmd_menu(msg: Message, state: FSMContext) -> None:
+    await state.clear()
+    db.ensure_user(msg.from_user.id, msg.from_user.username)
+    await msg.answer(t(msg.from_user.id, "menu_title"), reply_markup=kb_main(msg.from_user.id))
+
+
+@router.message(F.text == "🏠 Main Menu")
+async def cmd_menu_button(msg: Message, state: FSMContext) -> None:
     await state.clear()
     db.ensure_user(msg.from_user.id, msg.from_user.username)
     await msg.answer(t(msg.from_user.id, "menu_title"), reply_markup=kb_main(msg.from_user.id))
