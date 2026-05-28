@@ -173,6 +173,10 @@ def _is_admin(uid: int) -> bool:
 
 # ── Keyboards ──────────────────────────────────────────────────────────────────
 
+def _with_main_menu(rows: list[list[InlineKeyboardButton]]) -> InlineKeyboardMarkup:
+    """Append a global menu shortcut to inline keyboards."""
+    return InlineKeyboardMarkup(inline_keyboard=[*rows, [InlineKeyboardButton(text="🏠 Main Menu", callback_data="menu")]])
+
 def kb_main(uid: int) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton(text=t(uid, "btn_lots"),    callback_data="lots:0")],
@@ -199,27 +203,27 @@ def kb_admin() -> InlineKeyboardMarkup:
 
 
 def kb_cancel() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="❌ Cancel", callback_data="cancel")]
     ])
 
 
 def kb_photos_done() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="✅ Done / Готово", callback_data="photos_done")],
         [InlineKeyboardButton(text="❌ Cancel",       callback_data="cancel")],
     ])
 
 
 def kb_skip() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="⏭ Skip / Пропустить", callback_data="skip")],
         [InlineKeyboardButton(text="❌ Cancel",           callback_data="cancel")],
     ])
 
 
 def kb_starts_at() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="🟢 Сейчас",      callback_data="cl_start:now")],
         [InlineKeyboardButton(text="🕐 Через час",   callback_data="cl_start:1h")],
         [InlineKeyboardButton(text="🕑 Через 2 часа", callback_data="cl_start:2h")],
@@ -228,7 +232,7 @@ def kb_starts_at() -> InlineKeyboardMarkup:
 
 
 def kb_end_time() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="🕐 Через час",    callback_data="cl_end:1h")],
         [InlineKeyboardButton(text="🕑 Через 2 часа", callback_data="cl_end:2h")],
         [InlineKeyboardButton(text="🕒 Через 3 часа", callback_data="cl_end:3h")],
@@ -237,7 +241,7 @@ def kb_end_time() -> InlineKeyboardMarkup:
 
 
 def kb_confirm_lot() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="✅ Publish to Channel", callback_data="lot_confirm_yes")],
         [InlineKeyboardButton(text="❌ Cancel",             callback_data="cancel")],
     ])
@@ -245,7 +249,7 @@ def kb_confirm_lot() -> InlineKeyboardMarkup:
 
 def kb_bid(lot_id: int, step: float, uid: int = 0) -> InlineKeyboardMarkup:
     s = int(step)
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [
             InlineKeyboardButton(text=f"+{p(s*1)}", callback_data=f"bid_q:{lot_id}:1"),
             InlineKeyboardButton(text=f"+{p(s*5)}", callback_data=f"bid_q:{lot_id}:5"),
@@ -260,7 +264,7 @@ def kb_bid(lot_id: int, step: float, uid: int = 0) -> InlineKeyboardMarkup:
 
 
 def kb_admin_lot(lot_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="🗑 Delete",    callback_data=f"admin_del:{lot_id}"),
          InlineKeyboardButton(text="⏹ End Early", callback_data=f"admin_end:{lot_id}")],
         [InlineKeyboardButton(text="🔙 Back",     callback_data="admin_lots:0")],
@@ -268,7 +272,7 @@ def kb_admin_lot(lot_id: int) -> InlineKeyboardMarkup:
 
 
 def kb_verify_user(tg_id: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
+    return _with_main_menu([
         [InlineKeyboardButton(text="✅ Verify",   callback_data=f"uverify:{tg_id}"),
          InlineKeyboardButton(text="❌ Reject",   callback_data=f"ureject:{tg_id}")],
     ])
