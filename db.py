@@ -1,4 +1,5 @@
 import json
+import math
 import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -294,9 +295,57 @@ def get_bidder_num(lot_id: int, user_id: int) -> int:
         return num
 
 
-def place_bid(lot_id: int, user_id: int, amount: float) -> int:
-    num = get_bidder_num(lot_id, user_id)
+def _is_multiple(amount: float, step: float) -> bool:
+    if step <= 0:
+        return False
+    ratio = amount / step
+    return math.isclose(ratio, round(ratio), rel_tol=0, abs_tol=1e-9)
+
+
+def place_bid(lot_id: int, user_id: int, amount: float) -> dict:
+    """
+    Atomically validate and place a bid.
+    Returns dict with shape:
+      {"ok": True, "bidder_num": int, "prev_leader": Optional[int]}
+      {"ok": False, "reason": "closed"|"too_low"|"not_multiple", ...}
+    """
     with _cursor() as c:
+        c.execute(
+            """
+            SELECT id, status, current_price, bid_step, leader_user_id
+            FROM lots
+            WHERE id=%s
+            FOR UPDATE
+            """,
+            (lot_id,),
+        )
+        lot = c.fetchone()
+        if not lot or lot["status"] != "active":
+            return {"ok": False, "reason": "closed"}
+
+        current_price = float(lot["current_price"])
+        step = float(lot["bid_step"])
+        if amount <= current_price:
+            return {"ok": False, "reason": "too_low", "current_price": current_price}
+        if not _is_multiple(amount, step):
+            return {"ok": False, "reason": "not_multiple", "step": step}
+
+        c.execute(
+            "SELECT num FROM lot_bidders WHERE lot_id=%s AND user_id=%s",
+            (lot_id, user_id),
+        )
+        row = c.fetchone()
+        if row:
+            bidder_num = row["num"]
+        else:
+            c.execute("SELECT COUNT(*) AS cnt FROM lot_bidders WHERE lot_id=%s", (lot_id,))
+            bidder_num = c.fetchone()["cnt"] + 1
+            c.execute(
+                "INSERT INTO lot_bidders (lot_id, user_id, num) VALUES (%s, %s, %s)",
+                (lot_id, user_id, bidder_num),
+            )
+
+        prev_leader = lot.get("leader_user_id")
         c.execute(
             "UPDATE lots SET current_price=%s, leader_user_id=%s WHERE id=%s",
             (amount, user_id, lot_id),
@@ -305,7 +354,7 @@ def place_bid(lot_id: int, user_id: int, amount: float) -> int:
             "INSERT INTO bids (lot_id, user_id, amount) VALUES (%s, %s, %s)",
             (lot_id, user_id, amount),
         )
-    return num
+        return {"ok": True, "bidder_num": bidder_num, "prev_leader": prev_leader}
 
 
 def get_last_bid(lot_id: int) -> Optional[dict]:

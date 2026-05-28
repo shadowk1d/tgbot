@@ -191,8 +191,8 @@ def kb_admin() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="➕ Add Lot",       callback_data="admin_add_lot")],
         [InlineKeyboardButton(text="📂 Manage Lots",   callback_data="admin_lots:0")],
         [InlineKeyboardButton(text="📋 Pending Users", callback_data="admin_pending")],
-        [InlineKeyboardButton(text="� All Users",     callback_data="admin_users:0")],
-        [InlineKeyboardButton(text="�📜 History",       callback_data="admin_history:0")],
+        [InlineKeyboardButton(text="👥 All Users",     callback_data="admin_users:0")],
+        [InlineKeyboardButton(text="📜 History",       callback_data="admin_history:0")],
         [InlineKeyboardButton(text="📢 Broadcast",     callback_data="admin_broadcast")],
         [InlineKeyboardButton(text="🔙 Back",          callback_data="menu")],
     ])
@@ -426,9 +426,11 @@ async def finalize_lot(bot: Bot, lot_id: int) -> None:
                 winner_user = db.get_user(winner_id)
                 uname = (winner_user or {}).get("username", "")
                 full  = (winner_user or {}).get("full_name", "")
+                reg   = lot.get("reg_number") or "—"
                 await bot.send_message(
                     aid,
                     f"✅ Lot <b>{lot['title']}</b> sold!\n"
+                    f"Reg: <b>{reg}</b>\n"
                     f"Bidder #{bidder_num} | {full} | @{uname} | <code>{winner_id}</code>\n"
                     f"Price: <b>{p(winner_price)}</b>",
                     parse_mode=ParseMode.HTML,
@@ -995,35 +997,12 @@ async def handle_custom_bid(msg: Message, state: FSMContext) -> None:
         await msg.answer(t(uid, "lot_not_found"))
         return
 
-    step = lot["bid_step"]
-    if amount <= lot["current_price"]:
-        await msg.answer(
-            t(uid, "bid_too_low", current=p(lot["current_price"])), reply_markup=kb_cancel()
-        )
-        return
-    if amount % step != 0:
-        await msg.answer(
-            t(uid, "bid_not_multiple", step=int(step)), reply_markup=kb_cancel()
-        )
-        return
-
     await state.clear()
-
-    # Fake CallbackQuery context not available here — call helper directly
-    class _FakeMsg:
-        bot = msg.bot
 
     await _place_bid(msg.bot, lot, uid, amount, reply_msg=msg)
 
 
 async def _do_bid(cq: CallbackQuery, lot: dict, uid: int, amount: float) -> None:
-    step = lot["bid_step"]
-    if amount <= lot["current_price"]:
-        await cq.answer(f"❌ Bid must be above {p(lot['current_price'])}", show_alert=True)
-        return
-    if amount % step != 0:
-        await cq.answer(f"❌ Bid must be a multiple of {p(step)}", show_alert=True)
-        return
     await _place_bid(cq.bot, lot, uid, amount, cq=cq)
 
 
@@ -1041,7 +1020,29 @@ async def _place_bid(bot: Bot, lot: dict, uid: int, amount: float,
     except Exception:
         pass
 
-    bidder_num = db.place_bid(lot_id, uid, amount)
+    bid_result = db.place_bid(lot_id, uid, amount)
+    if not bid_result.get("ok"):
+        reason = bid_result.get("reason")
+        if reason == "too_low":
+            current = p(float(bid_result.get("current_price", lot.get("current_price", 0))))
+            msg_text = t(uid, "bid_too_low", current=current)
+            alert_text = f"❌ Bid must be above {current}"
+        elif reason == "not_multiple":
+            step = float(bid_result.get("step", lot.get("bid_step", 0)))
+            msg_text = t(uid, "bid_not_multiple", step=int(step))
+            alert_text = f"❌ Bid must be a multiple of {p(step)}"
+        else:
+            msg_text = t(uid, "lot_not_found")
+            alert_text = "❌ Auction is closed"
+
+        if cq:
+            await cq.answer(alert_text, show_alert=True)
+        elif reply_msg:
+            await reply_msg.answer(msg_text, parse_mode=ParseMode.HTML, reply_markup=kb_cancel())
+        return
+
+    bidder_num = bid_result["bidder_num"]
+    prev_leader = bid_result.get("prev_leader")
     lot = db.get_lot(lot_id)  # reload
 
     if cq:
@@ -1060,7 +1061,6 @@ async def _place_bid(bot: Bot, lot: dict, uid: int, amount: float,
     await edit_channel_post(bot, lot)
 
     # Notify previous leader
-    prev_leader = lot.get("leader_user_id")
     if prev_leader and prev_leader != uid:
         try:
             await bot.send_message(
@@ -1523,7 +1523,7 @@ async def cb_admin_users(cq: CallbackQuery) -> None:
         uname = f"@{u['username']}" if u.get("username") else "—"
         name  = u.get("full_name") or "—"
         status = u.get("status") or ""
-        icon = "✅" if status == "approved" else ("⏳" if status == "pending" else "🔵")
+        icon = "✅" if status == "verified" else ("⏳" if status == "pending" else "🔵")
         lines.append(f"{icon} <code>{u['tg_id']}</code> {uname} | {name}")
 
     rows = []
@@ -1636,6 +1636,7 @@ async def main() -> None:
     global BOT_USERNAME
     import os
     os.makedirs("data", exist_ok=True)
+    config.validate()
     _ensure_single_instance()
     db.init_db()
 

@@ -5,9 +5,9 @@ from dotenv import load_dotenv
 # Always load .env from the same directory as this file
 load_dotenv(dotenv_path=Path(__file__).parent / ".env", override=True)
 
-BOT_TOKEN: str = os.getenv("BOT_TOKEN", "8640602926:AAFW46YlKQjOOrMJjO7jMONXcmXYFZjWuk4")
+BOT_TOKEN: str = os.getenv("BOT_TOKEN", "").strip()
 
-_raw = os.getenv("ADMIN_IDS", os.getenv("ADMIN_ID", "5469771662,5085908761,8304646824,6784197575"))
+_raw = os.getenv("ADMIN_IDS", os.getenv("ADMIN_ID", ""))
 ADMIN_IDS: list[int] = [int(x) for x in _raw.replace(" ", "").split(",") if x.isdigit()]
 
 ADMIN_CONTACT: str = os.getenv("ADMIN_CONTACT", "@stm_export")
@@ -19,7 +19,7 @@ ADMIN_CHAT_ID: int = ADMIN_IDS[0] if ADMIN_IDS else 0
 CHANNEL_ID: str = os.getenv("CHANNEL_ID", os.getenv("CHANNEL_USERNAME", ""))
 
 RULES_TEXT = (
-    "� <b>AUCTION RULES & BUYING INSTRUCTIONS</b>\n\n"
+    "📜 <b>AUCTION RULES & BUYING INSTRUCTIONS</b>\n\n"
     "1️⃣ Each lot is published with a starting price.\n"
     "2️⃣ Participants can place bids by increasing the current offer in the comments or as instructed in the post.\n"
     "3️⃣ Every lot has a limited auction time. A countdown timer will be visible while the auction is active.\n"
@@ -35,3 +35,13 @@ SUPPORT_TEXT = (
     "🛠 <b>Support / Поддержка</b>\n\n"
     f"Contact admin / Обратитесь к администратору: {ADMIN_CONTACT}"
 )
+
+
+def validate() -> None:
+    missing = []
+    if not BOT_TOKEN:
+        missing.append("BOT_TOKEN")
+    if not ADMIN_IDS:
+        missing.append("ADMIN_IDS (or ADMIN_ID)")
+    if missing:
+        raise RuntimeError("Missing required env vars: " + ", ".join(missing))
