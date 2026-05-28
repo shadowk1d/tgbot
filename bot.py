@@ -233,6 +233,7 @@ def kb_starts_at() -> InlineKeyboardMarkup:
 
 def kb_end_time() -> InlineKeyboardMarkup:
     return _with_main_menu([
+        [InlineKeyboardButton(text="🕔 Через 5 минут", callback_data="cl_end:5m")],
         [InlineKeyboardButton(text="🕐 Через час",    callback_data="cl_end:1h")],
         [InlineKeyboardButton(text="🕑 Через 2 часа", callback_data="cl_end:2h")],
         [InlineKeyboardButton(text="🕒 Через 3 часа", callback_data="cl_end:3h")],
@@ -1326,7 +1327,9 @@ async def cl_starts_at_btn(cq: CallbackQuery, state: FSMContext) -> None:
 async def cl_end_time_btn(cq: CallbackQuery, state: FSMContext) -> None:
     choice = cq.data.split(":")[1]
     now = datetime.now()
-    if choice == "1h":
+    if choice == "5m":
+        end_dt = now + timedelta(minutes=5)
+    elif choice == "1h":
         end_dt = now + timedelta(hours=1)
     elif choice == "2h":
         end_dt = now + timedelta(hours=2)
