@@ -223,12 +223,40 @@ def kb_skip() -> InlineKeyboardMarkup:
 
 
 def kb_starts_at() -> InlineKeyboardMarkup:
-    return _with_main_menu([
-        [InlineKeyboardButton(text="🟢 Сейчас",      callback_data="cl_start:now")],
-        [InlineKeyboardButton(text="🕐 Через час",   callback_data="cl_start:1h")],
-        [InlineKeyboardButton(text="🕑 Через 2 часа", callback_data="cl_start:2h")],
-        [InlineKeyboardButton(text="❌ Отмена",       callback_data="cancel")],
-    ])
+    ru_months = [
+        "января", "февраля", "марта", "апреля", "мая", "июня",
+        "июля", "августа", "сентября", "октября", "ноября", "декабря",
+    ]
+    now = datetime.now()
+    rows: list[list[InlineKeyboardButton]] = []
+    for i in range(3):
+        d = now + timedelta(days=i)
+        date_iso = d.date().isoformat()
+        label = f"📅 {d.day} {ru_months[d.month - 1]}"
+        rows.append([InlineKeyboardButton(text=label, callback_data=f"cl_start_date:{date_iso}")])
+
+    rows.append([InlineKeyboardButton(text="🟢 Опубликовать сейчас", callback_data="cl_start_now")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    return _with_main_menu(rows)
+
+
+def kb_start_time_slots() -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    current_row: list[InlineKeyboardButton] = []
+    for hour in range(8, 19):
+        current_row.append(
+            InlineKeyboardButton(text=f"{hour:02d}:00", callback_data=f"cl_start_time:{hour:02d}")
+        )
+        if len(current_row) == 3:
+            rows.append(current_row)
+            current_row = []
+
+    if current_row:
+        rows.append(current_row)
+
+    rows.append([InlineKeyboardButton(text="🔙 Назад к датам", callback_data="cl_start_dates")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+    return _with_main_menu(rows)
 
 
 def kb_end_time() -> InlineKeyboardMarkup:
@@ -1306,9 +1334,9 @@ async def cl_bid_step_skip(cq: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(bid_step=10)
     await state.set_state(CreateLot.starts_at)
     await cq.message.edit_text(
-        "🕐 Enter <b>after how many hours</b> the lot should appear in the channel.\n"
-        "Send <code>0</code> for immediate publish, <code>1.5</code> for 1.5 hours, or skip for immediate publish.",
-        parse_mode=ParseMode.HTML, reply_markup=kb_skip(),
+        "🕐 Выберите <b>дату публикации</b> лота (ближайшие 3 дня), затем время 08:00-18:00.\n"
+        "Или отправьте число часов вручную: <code>0</code>, <code>1.5</code>, <code>2</code>.",
+        parse_mode=ParseMode.HTML, reply_markup=kb_starts_at(),
     )
     await cq.answer()
 
@@ -1323,15 +1351,74 @@ async def cl_bid_step(msg: Message, state: FSMContext) -> None:
     await state.update_data(bid_step=v)
     await state.set_state(CreateLot.starts_at)
     await msg.answer(
-        "🕐 Enter <b>after how many hours</b> the lot should appear in the channel.\n"
-        "Send <code>0</code> for immediate publish, <code>1.5</code> for 1.5 hours, or skip for immediate publish.",
-        parse_mode=ParseMode.HTML, reply_markup=kb_skip(),
+        "🕐 Выберите <b>дату публикации</b> лота (ближайшие 3 дня), затем время 08:00-18:00.\n"
+        "Или отправьте число часов вручную: <code>0</code>, <code>1.5</code>, <code>2</code>.",
+        parse_mode=ParseMode.HTML, reply_markup=kb_starts_at(),
     )
 
 
 @router.callback_query(CreateLot.starts_at, F.data == "skip")
 async def cl_starts_at_skip(cq: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(starts_at="")
+    await state.set_state(CreateLot.end_time)
+    await cq.message.edit_text(
+        "⏰ Выберите <b>время окончания</b> аукциона:",
+        parse_mode=ParseMode.HTML, reply_markup=kb_end_time(),
+    )
+    await cq.answer()
+
+
+@router.callback_query(CreateLot.starts_at, F.data == "cl_start_dates")
+async def cl_starts_at_dates(cq: CallbackQuery) -> None:
+    await cq.message.edit_text(
+        "🕐 Выберите <b>дату публикации</b> лота (ближайшие 3 дня), затем время 08:00-18:00.\n"
+        "Или отправьте число часов вручную: <code>0</code>, <code>1.5</code>, <code>2</code>.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_starts_at(),
+    )
+    await cq.answer()
+
+
+@router.callback_query(CreateLot.starts_at, F.data == "cl_start_now")
+async def cl_starts_at_now(cq: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(starts_at="", selected_start_date="")
+    await state.set_state(CreateLot.end_time)
+    await cq.message.edit_text(
+        "⏰ Выберите <b>время окончания</b> аукциона:",
+        parse_mode=ParseMode.HTML, reply_markup=kb_end_time(),
+    )
+    await cq.answer()
+
+
+@router.callback_query(CreateLot.starts_at, F.data.startswith("cl_start_date:"))
+async def cl_starts_at_pick_date(cq: CallbackQuery, state: FSMContext) -> None:
+    date_iso = cq.data.split(":", maxsplit=1)[1]
+    await state.update_data(selected_start_date=date_iso)
+    await cq.message.edit_text(
+        f"🕒 Дата выбрана: <b>{date_iso}</b>. Теперь выберите время (08:00-18:00):",
+        parse_mode=ParseMode.HTML,
+        reply_markup=kb_start_time_slots(),
+    )
+    await cq.answer()
+
+
+@router.callback_query(CreateLot.starts_at, F.data.startswith("cl_start_time:"))
+async def cl_starts_at_pick_time(cq: CallbackQuery, state: FSMContext) -> None:
+    hour = cq.data.split(":", maxsplit=1)[1]
+    data = await state.get_data()
+    date_iso = data.get("selected_start_date", "")
+    if not date_iso:
+        await cq.answer("Сначала выберите дату", show_alert=True)
+        return
+
+    chosen_dt = datetime.fromisoformat(f"{date_iso}T{hour}:00:00")
+    now = datetime.now()
+    if chosen_dt <= now:
+        await cq.answer("Это время уже прошло. Выберите более поздний слот.", show_alert=True)
+        return
+
+    starts_at = chosen_dt.isoformat(timespec="seconds")
+    await state.update_data(starts_at=starts_at)
     await state.set_state(CreateLot.end_time)
     await cq.message.edit_text(
         "⏰ Выберите <b>время окончания</b> аукциона:",
@@ -1348,9 +1435,9 @@ async def cl_starts_at_text(msg: Message, state: FSMContext) -> None:
         assert hours >= 0
     except Exception:
         return await msg.answer(
-            "Enter a valid non-negative number of hours, for example <code>0</code>, <code>0.5</code>, <code>2</code>.",
+            "Выберите дату и время кнопками или введите неотрицательное число часов: <code>0</code>, <code>0.5</code>, <code>2</code>.",
             parse_mode=ParseMode.HTML,
-            reply_markup=kb_skip(),
+            reply_markup=kb_starts_at(),
         )
 
     starts_at = ""
@@ -1363,25 +1450,6 @@ async def cl_starts_at_text(msg: Message, state: FSMContext) -> None:
         "⏰ Выберите <b>время окончания</b> аукциона:",
         parse_mode=ParseMode.HTML, reply_markup=kb_end_time(),
     )
-
-
-@router.callback_query(CreateLot.starts_at, F.data.startswith("cl_start:"))
-async def cl_starts_at_btn(cq: CallbackQuery, state: FSMContext) -> None:
-    choice = cq.data.split(":")[1]
-    now = datetime.now()
-    if choice == "now":
-        starts_at = ""
-    elif choice == "1h":
-        starts_at = (now + timedelta(hours=1)).isoformat(timespec="seconds")
-    else:
-        starts_at = (now + timedelta(hours=2)).isoformat(timespec="seconds")
-    await state.update_data(starts_at=starts_at)
-    await state.set_state(CreateLot.end_time)
-    await cq.message.edit_text(
-        "⏰ Выберите <b>время окончания</b> аукциона:",
-        parse_mode=ParseMode.HTML, reply_markup=kb_end_time(),
-    )
-    await cq.answer()
 
 
 @router.callback_query(CreateLot.end_time, F.data.startswith("cl_end:"))
