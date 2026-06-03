@@ -1306,8 +1306,9 @@ async def cl_bid_step_skip(cq: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(bid_step=10)
     await state.set_state(CreateLot.starts_at)
     await cq.message.edit_text(
-        "🕐 Выберите <b>время старта</b> аукциона:",
-        parse_mode=ParseMode.HTML, reply_markup=kb_starts_at(),
+        "🕐 Enter <b>after how many hours</b> the lot should appear in the channel.\n"
+        "Send <code>0</code> for immediate publish, <code>1.5</code> for 1.5 hours, or skip for immediate publish.",
+        parse_mode=ParseMode.HTML, reply_markup=kb_skip(),
     )
     await cq.answer()
 
@@ -1322,8 +1323,45 @@ async def cl_bid_step(msg: Message, state: FSMContext) -> None:
     await state.update_data(bid_step=v)
     await state.set_state(CreateLot.starts_at)
     await msg.answer(
-        "🕐 Выберите <b>время старта</b> аукциона:",
-        parse_mode=ParseMode.HTML, reply_markup=kb_starts_at(),
+        "🕐 Enter <b>after how many hours</b> the lot should appear in the channel.\n"
+        "Send <code>0</code> for immediate publish, <code>1.5</code> for 1.5 hours, or skip for immediate publish.",
+        parse_mode=ParseMode.HTML, reply_markup=kb_skip(),
+    )
+
+
+@router.callback_query(CreateLot.starts_at, F.data == "skip")
+async def cl_starts_at_skip(cq: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(starts_at="")
+    await state.set_state(CreateLot.end_time)
+    await cq.message.edit_text(
+        "⏰ Выберите <b>время окончания</b> аукциона:",
+        parse_mode=ParseMode.HTML, reply_markup=kb_end_time(),
+    )
+    await cq.answer()
+
+
+@router.message(CreateLot.starts_at)
+async def cl_starts_at_text(msg: Message, state: FSMContext) -> None:
+    raw_value = (msg.text or "").strip().replace(",", ".")
+    try:
+        hours = float(raw_value)
+        assert hours >= 0
+    except Exception:
+        return await msg.answer(
+            "Enter a valid non-negative number of hours, for example <code>0</code>, <code>0.5</code>, <code>2</code>.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb_skip(),
+        )
+
+    starts_at = ""
+    if hours > 0:
+        starts_at = (datetime.now() + timedelta(hours=hours)).isoformat(timespec="seconds")
+
+    await state.update_data(starts_at=starts_at)
+    await state.set_state(CreateLot.end_time)
+    await msg.answer(
+        "⏰ Выберите <b>время окончания</b> аукциона:",
+        parse_mode=ParseMode.HTML, reply_markup=kb_end_time(),
     )
 
 
@@ -1404,10 +1442,18 @@ async def cb_confirm_lot(cq: CallbackQuery, state: FSMContext) -> None:
     )
 
     lot = db.get_lot(lot_id)
-    await publish_lot_to_channel(cq.bot, lot)
-    lot = db.get_lot(lot_id)  # reload with channel_message_id
+    starts_at = lot.get("starts_at") or ""
+    should_publish_now = not starts_at or starts_at <= datetime.now().isoformat(timespec="seconds")
+    if should_publish_now:
+        await publish_lot_to_channel(cq.bot, lot)
+        lot = db.get_lot(lot_id)  # reload with channel_message_id
 
-    channel_ok = "✅ Published to channel." if lot.get("channel_message_id") else "⚠️ Channel post failed — check CHANNEL_ID."
+    if lot.get("channel_message_id"):
+        channel_ok = "✅ Published to channel."
+    elif starts_at:
+        channel_ok = f"⏳ Scheduled for channel publish at {starts_at}."
+    else:
+        channel_ok = "⚠️ Channel post failed — check CHANNEL_ID."
 
     await cq.message.edit_text(
         f"✅ Lot <b>#{lot_id}: {lot['title']}</b> created!\n{channel_ok}",
@@ -1624,6 +1670,21 @@ async def job_notify_ending_soon(bot: Bot) -> None:
                 pass
 
 
+async def job_publish_scheduled_lots(bot: Bot) -> None:
+    """Publish lots whose scheduled channel publish time has arrived."""
+    now = datetime.now().isoformat(timespec="seconds")
+    for lot in db.get_active_lots():
+        if lot.get("channel_message_id"):
+            continue
+        if lot.get("end_time") and lot["end_time"] <= now:
+            continue
+        starts_at = lot.get("starts_at") or ""
+        if starts_at and starts_at > now:
+            continue
+        await publish_lot_to_channel(bot, lot)
+        await asyncio.sleep(1)
+
+
 async def job_update_countdown(bot: Bot) -> None:
     """Edit channel posts to keep countdown fresh (every 10 sec)."""
     now = datetime.now().isoformat(timespec="seconds")
@@ -1702,6 +1763,7 @@ async def main() -> None:
         await loop.run_in_executor(None, db.keepalive)
 
     scheduler = AsyncIOScheduler()
+    scheduler.add_job(job_publish_scheduled_lots, "interval", seconds=30, args=[bot])
     scheduler.add_job(job_check_expired,      "interval", seconds=30,  args=[bot])
     scheduler.add_job(job_notify_ending_soon, "interval", seconds=300, args=[bot])
     scheduler.add_job(job_update_countdown,   "interval", seconds=10,  args=[bot])
