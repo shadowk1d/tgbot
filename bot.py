@@ -1456,19 +1456,31 @@ async def cl_starts_at_text(msg: Message, state: FSMContext) -> None:
 async def cl_end_time_btn(cq: CallbackQuery, state: FSMContext) -> None:
     choice = cq.data.split(":")[1]
     now = datetime.now()
+    data = await state.get_data()
+
+    # Duration is counted from scheduled publish time if set; otherwise from now.
+    base_dt = now
+    starts_raw = data.get("starts_at") or ""
+    if starts_raw:
+        try:
+            starts_dt = datetime.fromisoformat(starts_raw)
+            if starts_dt > now:
+                base_dt = starts_dt
+        except Exception:
+            pass
+
     if choice == "30m":
-        end_dt = now + timedelta(minutes=30)
+        end_dt = base_dt + timedelta(minutes=30)
     elif choice == "1h":
-        end_dt = now + timedelta(hours=1)
+        end_dt = base_dt + timedelta(hours=1)
     elif choice == "2h":
-        end_dt = now + timedelta(hours=2)
+        end_dt = base_dt + timedelta(hours=2)
     else:
-        end_dt = now + timedelta(hours=3)
+        end_dt = base_dt + timedelta(hours=3)
     end_time = end_dt.isoformat(timespec="seconds")
     await state.update_data(end_time=end_time)
     await state.set_state(CreateLot.confirm)
 
-    data = await state.get_data()
     reserve = data.get("reserve_price") or 0
     reserve_str = p(reserve) if reserve else "Not set"
     starts_str  = data.get("starts_at") or "Сейчас"
